@@ -430,7 +430,7 @@ function goalHint(x){if(!x.by||x.saved>=x.target)return '';const m=Math.max(1,Ma
 function vMore(){
   const r=(h,i,t,m)=>`<a class="row" href="#${h}" style="text-decoration:none;color:inherit"><div class="ico">${i}</div><div class="main"><div class="t">${t}</div><div class="m">${m}</div></div><span style="color:var(--muted)">›</span></a>`;
   return `<div class="top"><h1>More</h1></div><div class="list">
-  ${r('bills','🗓️','Bills & income',`${S.items.length} scheduled`)}
+  ${r('bills','🗓️','Bills & income',`${S.items.filter(i=>!(i.until&&i.until<today())&&!(i.freq==='once'&&i.date<today())).length} scheduled`)}
   ${r('debts','💳','Debt payoff',S.debts.length?`${S.debts.length} debts, ${S.method}`:'Plan your way out of debt')}
   ${r('categories','🏷️','Categories & budgets','Monthly limits per category')}
   ${r('settings','⚙️','Settings & backup','Floor, theme, export, restore')}</div>
@@ -438,10 +438,14 @@ function vMore(){
 }
 
 function vBills(){
-  const grp=t=>S.items.filter(i=>i.type===t).sort((a,b)=>a.name.localeCompare(b.name)).map(i=>{const n=events(today(),addD(today(),400)).find(e=>e.item.id===i.id);return `<button class="row" data-act="iedit" data-id="${i.id}"><div class="ico">${cat(i.cat).icon}</div><div class="main"><div class="t">${esc(i.name)}</div><div class="m">${FREQS.find(f=>f[0]===i.freq)[1]}${n?', next '+nice(n.date,{month:'short',day:'numeric'}):''}</div></div><div class="amt ${t==='income'?'in':''}">${money(i.amount)}</div></button>`}).join('');
+  const t0=today(),nx={};for(const e of events(t0,addD(t0,400)))if(!nx[e.item.id])nx[e.item.id]=e;
+  const soon=addD(t0,60),once=S.items.filter(i=>i.freq==='once'&&i.date>=t0&&i.date<=soon).sort((a,b)=>a.date.localeCompare(b.date)),later=S.items.filter(i=>i.freq==='once'&&i.date>soon).length;
+  const oneRow=i=>`<button class="row" data-act="iedit" data-id="${i.id}"><div class="ico">${cat(i.cat).icon}</div><div class="main"><div class="t">${esc(i.name)}</div><div class="m">${nice(i.date)}</div></div><div class="amt ${i.type==='income'?'in':''}">${i.type==='income'?'+':'-'}${money(i.amount)}</div></button>`;
+  const grp=t=>S.items.filter(i=>i.type===t&&i.freq!=='once'&&!(i.until&&i.until<t0)).sort((a,b)=>a.name.localeCompare(b.name)).map(i=>{const n=nx[i.id];return `<button class="row" data-act="iedit" data-id="${i.id}"><div class="ico">${cat(i.cat).icon}</div><div class="main"><div class="t">${esc(i.name)}</div><div class="m">${FREQS.find(f=>f[0]===i.freq)[1]}${n?', next '+nice(n.date,{month:'short',day:'numeric'}):''}</div></div><div class="amt ${t==='income'?'in':''}">${money(i.amount)}</div></button>`}).join('');
   return `<button class="back" onclick="history.back()">‹ More</button><div class="top"><h1>Bills & income</h1><button class="btn primary sm" data-act="inew">Add</button></div>
-  <div class="section" style="margin-top:4px"><h2>Income</h2><div class="list">${grp('income')||'<div class="empty">Add your paychecks so Broke-ish knows when money comes in.</div>'}</div></div>
-  <div class="section"><h2>Bills</h2><div class="list">${grp('bill')||'<div class="empty">Add rent, utilities, card payments and other bills.</div>'}</div></div>`;
+  <div class="section" style="margin-top:4px"><h2>Income</h2><div class="list">${grp('income')||(once.length?'<div class="empty">No repeating income. Your imported paychecks are under one-time items.</div>':'<div class="empty">Add your paychecks so Broke-ish knows when money comes in.</div>')}</div></div>
+  <div class="section"><h2>Bills</h2><div class="list">${grp('bill')||(once.length?'<div class="empty">No repeating bills. Your imported bills are under one-time items.</div>':'<div class="empty">Add rent, utilities, card payments and other bills.</div>')}</div></div>
+  ${once.length||later?`<div class="section"><h2>One-time items, next 60 days</h2><div class="list">${once.map(oneRow).join('')||'<div class="empty">None in the next 60 days.</div>'}</div>${later?`<p class="note" style="margin:8px 4px">${later} more one-time items after that. They all show in the Plan tab.</p>`:''}</div>`:''}`;
 }
 
 function payoff(){
@@ -484,6 +488,7 @@ function vSettings(){
   </div>
   <div class="section"><h2>Backup</h2><div class="list">
    <button class="row" data-act="export"><div class="ico">⬇️</div><div class="main"><div class="t">Export a backup</div><div class="m">Save everything to a file</div></div></button>
+   ${hasLegacy()?'<button class="row" data-act="oblegacy"><div class="ico">📲</div><div class="main"><div class="t">Bring in my old budget</div><div class="m">From the earlier version of the app</div></div></button>':''}
    <label class="row" style="cursor:pointer"><div class="ico">⬆️</div><div class="main"><div class="t">Restore from a file</div><div class="m">A Broke-ish backup or an old budget-data.json</div></div><input type="file" id="impfile" accept=".json,application/json" hidden></label>
   </div></div>
   <div class="section"><div class="list"><button class="row" data-act="reset"><div class="ico">🗑️</div><div class="main"><div class="t" style="color:var(--bad)">Erase everything</div><div class="m">Start over on this phone</div></div></button></div></div>
@@ -491,6 +496,7 @@ function vSettings(){
 }
 
 /* ---------- onboarding ---------- */
+function hasLegacy(){try{return !!localStorage.getItem(LEGACY_KEY)}catch(e){return false}}
 let ob={step:0};
 function renderWelcome(){
   const legacy=(()=>{try{return localStorage.getItem(LEGACY_KEY)}catch(e){return null}})();
@@ -531,15 +537,16 @@ function exportData(){
 }
 function fromLegacy(o){
   const st=fresh();st.setup=true;st.startDate=isDate(o.start)?o.start.slice(0,10):today();
-  const ck=['cash','startCash','start_cash','balance','startBalance','begin'].find(k=>typeof o[k]==='number');st.startBal=ck?o[ck]:0;
+  const ck=['opening','cash','startCash','start_cash','balance','startBalance','begin'].find(k=>typeof o[k]==='number');st.startBal=ck?o[ck]:0;
   let n=0;
   for(const e of (Array.isArray(o.events)?o.events:[])){
     let d,name,amt,kind='';
     if(Array.isArray(e)){d=e.find(isDate);const strs=e.filter(x=>typeof x==='string'&&x!==d);name=strs[0]||'Item';kind=strs.slice(1).join(' ');const nums=e.filter(x=>typeof x==='number');
       if(nums.length>=2)amt=nums[0]-nums[1];else if(nums.length===1)amt=/inc|pay|check|deposit/i.test(kind+name)?nums[0]:-Math.abs(nums[0]);}
     else if(e&&typeof e==='object'){d=[e.date,e.d,e.day].find(isDate);name=e.label||e.name||e.l||e.n||'Item';kind=String(e.kind||e.k||e.type||e.t||'');
-      if(e.in!=null||e.out!=null)amt=(+e.in||0)-(+e.out||0);else{const v=+(e.amount??e.amt??e.a??e.v??0);amt=/inc|pay|check|deposit/i.test(kind)?Math.abs(v):(v<0?v:-v)}}
-    if(!d||!amt)continue;
+      if(e.p||e.paid)continue;
+      if(e.i!=null||e.o!=null)amt=(+e.i||0)-(+e.o||0);else if(e.in!=null||e.out!=null)amt=(+e.in||0)-(+e.out||0);else{const v=+(e.amount??e.amt??e.a??e.v??0);amt=/inc|pay|check|deposit/i.test(kind)?Math.abs(v):(v<0?v:-v)}}
+    if(!d||!amt||d.slice(0,10)<st.startDate)continue;
     st.items.push({id:uid(),type:amt>0?'income':'bill',name:String(name),amount:r2(Math.abs(amt)),cat:amt>0?'pay':(/catch|min|card|loan/i.test(kind+name)?'debt':'other'),freq:'once',date:d.slice(0,10)});n++;
   }
   for(const d of (Array.isArray(o.debts)?o.debts:[])){if(!d||typeof d!=='object')continue;const bal=+(d.balance??d.bal??d.b??0);if(!bal)continue;st.debts.push({id:uid(),name:String(d.name||d.n||'Debt'),balance:r2(bal),apr:+(d.apr??d.rate??d.r??0),min:+(d.min??d.minimum??d.m??0)})}
@@ -548,7 +555,7 @@ function fromLegacy(o){
 function importText(txt){
   let o;try{o=JSON.parse(txt)}catch(e){return toast('That file isn’t a backup Broke-ish can read.')}
   if(o&&o.v===2){if(S.setup&&!confirm('Replace everything on this phone with this backup?'))return;S=Object.assign(fresh(),o);save();location.hash='#today';render();return toast('Backup restored.')}
-  if(o&&(o.events||o.debts)){const {st,n}=fromLegacy(o);if(S.setup&&!confirm('Replace everything on this phone with this budget file?'))return;S=st;save();location.hash='#plan';render();return toast(`Brought in ${n} scheduled items and ${st.debts.length} debts. Check your balance and floor.`)}
+  if(o&&(o.events||o.debts)){const {st,n}=fromLegacy(o);if(S.setup){if(!confirm('Replace your bills, income and debts with the ones from this budget file?'))return;st.name=S.name;st.floor=S.floor;st.theme=S.theme;st.goals=S.goals;st.cats=S.cats;st.method=S.method;st.extra=S.extra}else st.floor=1500;S=st;save();location.hash='#plan';render();return toast(`Brought in ${n} scheduled items and ${st.debts.length} debts. Check your balance and floor.`)}
   toast('That file isn’t a backup Broke-ish can read.');
 }
 document.addEventListener('change',e=>{if(e.target.id==='impfile'&&e.target.files[0]){const r=new FileReader();r.onload=()=>importText(r.result);r.readAsText(e.target.files[0]);e.target.value=''}});
