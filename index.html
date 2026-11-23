@@ -152,7 +152,7 @@ const KEY='hb-v1';
 let S=null;
 try{S=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){S=null}
 if(!S){S={done:{},anchor:null,paidOff:{},tab:'today',month:null};DATA.events.forEach(e=>{if(e.p)S.done[e.id]=1})}
-S.custom=S.custom||{inc:[],debts:[]};S.icon=S.icon||{kind:'glyph',glyph:'bars',color:'#1e6a8a'};S.appName=S.appName||'Budget';S.over=S.over||{};S.bal=S.bal||{};S.hidden=S.hidden||{};
+S.custom=S.custom||{inc:[],debts:[]};S.icon=S.icon||{kind:'glyph',glyph:'bars',color:'#1e6a8a'};S.appName=S.appName||'Budget';S.over=S.over||{};S.dbt=S.dbt||{};S.bal=S.bal||{};S.hidden=S.hidden||{};
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 const $=s=>document.querySelector(s);
 const fmt=n=>(n<0?'−':'')+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -301,6 +301,7 @@ function viewMonth(){
   h+='<p class="note">Groceries and DoorDash aren’t listed — they roughly cancel out. Tap a box when a payment or paycheck is done.</p>';
   return h;
 }
+function ov(d){const o=S.dbt[d.n];return o?Object.assign({},d,{bal:o.orig,apr:o.apr,min:o.min,due:o.due}):d}
 const REP={once:'one time',weekly:'every week',biweekly:'every 2 weeks',monthly:'every month'};
 function viewDebts(){
   const idx=monthKeys().indexOf(TODAY.slice(0,7));const mi=Math.max(0,idx);
@@ -312,16 +313,17 @@ function viewDebts(){
   <div class="stat"><div class="k">Paid off</div><div class="v">${Object.keys(S.paidOff).length}</div></div></div>`;
   S.custom.debts.forEach(c=>{const sd=simDebt(c);
     h+=`<div class="card"><div class="hd"><span class="nm">${c.n}<span class="tag">added</span></span><span class="num">${fmt(c.bal)}</span></div>
-    <div class="meta"><span>${(c.apr*100).toFixed(2).replace(/\.?0+$/,'')}% · ${fmt0(c.min)}/mo · due the ${c.due}</span><span>Payoff at the minimum: ${sd.po}</span></div>
+    ${c.orig?`<div class="bar"><i style="width:${Math.max(0,Math.min(100,(1-c.bal/c.orig)*100))}%"></i></div>`:''}
+    <div class="meta"><span>${c.orig?'Started '+fmt0(c.orig)+' · ':''}${(c.apr*100).toFixed(2).replace(/\.?0+$/,'')}% · ${fmt0(c.min)}/mo · due the ${c.due}</span><span>Payoff at the minimum: ${sd.po}</span></div>
     <div class="acts" style="margin-top:8px"><button class="btn" data-editc="debt:${c.id}">Edit</button><button class="btn danger" data-rm="debt:${c.id}">Remove</button></div></div>`});
   const ordered=base.slice().sort((a,b)=>{const ia=a.ends.findIndex(x=>x<0.005),ib=b.ends.findIndex(x=>x<0.005);return (ia<0?99:ia)-(ib<0?99:ib)});
-  ordered.forEach(d=>{
+  ordered.forEach(d0=>{const d=ov(d0);
     const off=!!S.paidOff[d.n],mine=S.bal[d.n]!==undefined,cur=curOf(d),pct=Math.max(0,Math.min(100,(1-cur/d.bal)*100));
     h+=`<div class="card ${off?'paidoff':''}"><div class="hd"><span class="nm">${d.n}</span><span class="num">${off?'Paid off':fmt(cur)}</span></div>
     <div class="bar"><i style="width:${off?100:pct}%"></i></div>
     <div class="meta"><span>Started ${fmt0(d.bal)} · ${(d.apr*100).toFixed(2).replace(/\.?0+$/,'')}% · ${fmt0(d.min)}/mo · due the ${d.due}${['th','st','nd','rd'][(d.due%10<4&&(d.due<11||d.due>13))?d.due%10:0]}</span>
     <span>${mine?'Balance you entered':'Planned payoff: '+d.po}</span></div>
-    <div class="acts" style="margin-top:8px"><button class="btn" data-balname="${d.n}">Edit balance</button><button class="btn" data-off="${d.n}">${off?'Undo paid off':'Mark paid off'}</button><button class="btn danger" data-hide="${d.n}">Remove</button></div></div>`;
+    <div class="acts" style="margin-top:8px"><button class="btn" data-balname="${d.n}">Edit details</button><button class="btn" data-off="${d.n}">${off?'Undo paid off':'Mark paid off'}</button><button class="btn danger" data-hide="${d.n}">Remove</button></div></div>`;
   });
   h+='<div class="acts"><button class="btn primary" id="adddebt">Add a debt</button></div>';
   return h+'<p class="note">Added debts are paid at their minimum only; they don’t change the snowball. A balance you enter is shown here but doesn’t re-plan the payoff, so send me real balances and I’ll update the plan.</p>';
@@ -398,7 +400,8 @@ function openAdd(type,item){
     <label class="fld">First date<input id="f-date" type="date" value="${ed?item.date:TODAY}"></label>
     <label class="fld">Repeats<select id="f-rep">${Object.keys(REP).map(k=>`<option value="${k}" ${k===rp?'selected':''}>${REP[k][0].toUpperCase()+REP[k].slice(1)}</option>`).join('')}</select></label>`:
    `<label class="fld">Name<input id="f-name" type="text" value="${ed?esc(item.n):''}" placeholder="Store card"></label>
-    <label class="fld">Balance<input id="f-bal" type="number" inputmode="decimal" step="0.01" value="${ed?item.bal:''}"></label>
+    <label class="fld">Original balance (optional)<input id="f-orig" type="number" inputmode="decimal" step="0.01" value="${ed&&item.orig?item.orig:''}"></label>
+    <label class="fld">Current balance<input id="f-bal" type="number" inputmode="decimal" step="0.01" value="${ed?item.bal:''}"></label>
     <label class="fld">Interest rate (APR %)<input id="f-apr" type="number" inputmode="decimal" step="0.01" value="${ed?+(item.apr*100).toFixed(4):''}"></label>
     <label class="fld">Minimum payment<input id="f-min" type="number" inputmode="decimal" step="0.01" value="${ed?item.min:''}"></label>
     <label class="fld">Due day of the month (1–28)<input id="f-due" type="number" inputmode="numeric" min="1" max="28" value="${ed?item.due:''}"></label>`;
@@ -417,10 +420,13 @@ function openEvent(id){
 }
 function openBal(n){
   const d=$('#dlg'),dd=DATA.debts.find(x=>x.n===n),mi=Math.max(0,monthKeys().indexOf(TODAY.slice(0,7)));
-  const v=S.bal[n]!==undefined?S.bal[n]:dd.ends[mi];
-  d.innerHTML=`<h2 style="margin:0 0 4px">${esc(n)} balance</h2><p class="note" style="margin:0">What does the account say right now?</p>
-  <label class="fld">Balance<input id="b-val" type="number" inputmode="decimal" step="0.01" value="${v}"></label>
-  <div class="acts"><button class="btn" id="cancel">Cancel</button>${S.bal[n]!==undefined?`<button class="btn" id="balclear" data-oid="${esc(n)}">Use plan balance</button>`:''}<button class="btn primary" id="balsave" data-oid="${esc(n)}">Save</button></div>`;
+  const o=S.dbt[n]||{},cur=S.bal[n]!==undefined?S.bal[n]:dd.ends[mi];
+  const F=(id,lab,val,extra)=>`<label class="fld">${lab}<input id="${id}" type="number" inputmode="decimal" step="0.01" value="${val}" ${extra||''}></label>`;
+  d.innerHTML=`<h2 style="margin:0 0 4px">${esc(n)}</h2><p class="note" style="margin:0">Change what the app shows for this account. The payoff plan itself doesn’t change until you send me the new numbers.</p>
+  ${F('d-orig','Original balance',o.orig!==undefined?o.orig:dd.bal)}${F('d-cur','Current balance',cur)}
+  ${F('d-apr','Interest rate (APR %)',+((o.apr!==undefined?o.apr:dd.apr)*100).toFixed(4))}${F('d-min','Minimum payment',o.min!==undefined?o.min:dd.min)}
+  ${F('d-due','Due day of the month (1–31)',o.due!==undefined?o.due:dd.due,'min="1" max="31"')}
+  <div class="acts"><button class="btn" id="cancel">Cancel</button>${(S.dbt[n]||S.bal[n]!==undefined)?`<button class="btn" id="dbclear" data-oid="${esc(n)}">Back to plan numbers</button>`:''}<button class="btn primary" id="dbsave" data-oid="${esc(n)}">Save</button></div>`;
   if(!d.open)d.showModal();
 }
 function openHide(n){
@@ -471,12 +477,16 @@ document.addEventListener('click',ev=>{
   if(t.id==='resetev'){delete S.over[t.dataset.oid];refresh();$('#dlg').close();rerender();toast('Changes undone');return}
   if(t.id==='series'){const p=t.dataset.oid.split(':'),k=p[0]==='ci'?'inc':'debt',id=p[1];
     openAdd(k,(k==='inc'?S.custom.inc:S.custom.debts).find(c=>c.id===id));return}
-  if(t.id==='balsave'){const v=parseFloat($('#b-val').value);if(isNaN(v)){$('#b-val').focus();return}S.bal[t.dataset.oid]=v;save();$('#dlg').close();rerender();toast('Balance saved');return}
-  if(t.id==='balclear'){delete S.bal[t.dataset.oid];save();$('#dlg').close();rerender();return}
+  if(t.id==='dbsave'){const n=t.dataset.oid,g=id=>parseFloat($('#'+id).value);
+    const orig=g('d-orig'),cur=g('d-cur'),apr=g('d-apr'),min=g('d-min'),due=parseInt($('#d-due').value,10);
+    if(!(orig>=0)){$('#d-orig').focus();return}if(!(cur>=0)){$('#d-cur').focus();return}if(!(apr>=0)){$('#d-apr').focus();return}
+    if(!(min>=0)){$('#d-min').focus();return}if(!(due>=1&&due<=31)){$('#d-due').focus();return}
+    S.dbt[n]={orig,apr:apr/100,min,due};S.bal[n]=cur;save();$('#dlg').close();rerender();toast('Saved');return}
+  if(t.id==='dbclear'){const n=t.dataset.oid;delete S.dbt[n];delete S.bal[n];save();$('#dlg').close();rerender();return}
   if(t.id==='hidepay'||t.id==='hideonly'){const n=t.dataset.oid;let ids=[];
     if(t.id==='hidepay'){ids=EV.filter(payOf(n)).map(e=>e.id);ids.forEach(id=>{S.over[id]=Object.assign({},S.over[id],{del:1})})}
     S.hidden[n]=ids;refresh();$('#dlg').close();rerender();toast('Removed');return}
-  if(t.id==='undoall'){if(confirm('Undo every edit and removal you made to the schedule and balances? Your added income and debts stay.')){S.over={};S.hidden={};S.bal={};refresh();rerender()}return}
+  if(t.id==='undoall'){if(confirm('Undo every edit and removal you made to the schedule and balances? Your added income and debts stay.')){S.over={};S.hidden={};S.bal={};S.dbt={};refresh();rerender()}return}
   if(t.id==='add'||t.id==='add2'){openAdd('inc');return}
   if(t.id==='adddebt'){openAdd('debt');return}
   if(t.dataset.addtype){openAdd(t.dataset.addtype);return}
@@ -493,7 +503,7 @@ document.addEventListener('click',ev=>{
       const n=val('f-name'),bal=parseFloat(val('f-bal')),apr=parseFloat(val('f-apr'))/100,min=parseFloat(val('f-min')),due=parseInt(val('f-due'),10);
       if(!n){$('#f-name').focus();return}if(!(bal>0)){$('#f-bal').focus();return}if(isNaN(apr)||apr<0){$('#f-apr').focus();return}
       if(!(min>0)){$('#f-min').focus();return}if(!(due>=1&&due<=28)){$('#f-due').focus();return}
-      const o={n,bal,apr,min,due};if(t.dataset.editid)Object.assign(S.custom.debts.find(c=>c.id===t.dataset.editid),o);else S.custom.debts.push(Object.assign({id:'x'+Date.now()},o));
+      const orig=parseFloat(val('f-orig'));const o={n,bal,apr,min,due,orig:orig>0?orig:undefined};if(t.dataset.editid)Object.assign(S.custom.debts.find(c=>c.id===t.dataset.editid),o);else S.custom.debts.push(Object.assign({id:'x'+Date.now()},o));
     }
     refresh();$('#dlg').close();render();toast(t.dataset.editid?'Saved':'Added');return}
   if(t.id==='cancel'){$('#dlg').close();return}
@@ -503,7 +513,7 @@ document.addEventListener('click',ev=>{
     if(isNaN(v)){$('#bal').focus();return}
     S.anchor={balance:v,snap:Object.assign({},S.done),date:TODAY};save();P=project();$('#dlg').close();render();toast('Balance saved');return}
   if(t.id==='reset'){
-    if(confirm('Clear all ticks, paid-off marks and your entered balance?')){S.done={};DATA.events.forEach(e=>{if(e.p)S.done[e.id]=1});S.anchor=null;S.paidOff={};S.over={};S.hidden={};S.bal={};refresh();render()}
+    if(confirm('Clear all ticks, paid-off marks and your entered balance?')){S.done={};DATA.events.forEach(e=>{if(e.p)S.done[e.id]=1});S.anchor=null;S.paidOff={};S.over={};S.hidden={};S.bal={};S.dbt={};refresh();render()}
     return}
   if(t.id==='share'){
     const done=EV.filter(e=>S.done[e.id]&&(!S.anchor||!S.anchor.snap[e.id])&&!e.p).map(e=>e.l+' ('+e.d+')');
